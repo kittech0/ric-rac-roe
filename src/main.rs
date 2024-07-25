@@ -22,7 +22,33 @@
  * SOFTWARE.
  *
  */
+use std::error::Error as StdError;
+use std::fmt::{Debug, Display};
 
-fn main() {
+use crossterm::event::KeyEvent;
+use futures::StreamExt;
+
+use crate::event::EventHandler;
+
+mod event;
+
+type ErrorResult<T = ()> = Result<T, &'static dyn StdError>;
+
+#[tokio::main]
+async fn main() -> ErrorResult {
     println!("Hello, world!");
+    let ok_key: fn(&KeyEvent) -> ErrorResult = |key_code| {
+        println!("{key_code:?}");
+        Ok(())
+    };
+    let event_handler = EventHandler {
+        focus_gained: [],
+        focus_lost: [],
+        key: [ok_key],
+        mouse: [],
+        paste: [],
+        resize: [],
+    };
+    event_handler.init().await?;
+    Ok(())
 }

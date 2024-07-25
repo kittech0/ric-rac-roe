@@ -5,3 +5,6 @@ edition = "2021"
 license-file = "LICENSE"
 
 [dependencies]
+crossterm = { version = "0.27.0", features = ["bracketed-paste", "event-stream"] }
+tokio = { version = "1.39.1", features = ["full"] }
+futures = "0.3.30"
