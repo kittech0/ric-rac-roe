@@ -22,6 +22,9 @@
  * SOFTWARE.
  *
  */
+use std::future::IntoFuture;
+use std::marker::PhantomData;
+use std::pin::Pin;
 
 use crossterm::event::{Event, EventStream, KeyEvent, MouseEvent};
 use futures::StreamExt;
@@ -29,14 +32,17 @@ use tokio::time;
 
 use crate::ErrorResult;
 
-pub struct EventHandler<
-    FG: AsRef<[fn() -> ErrorResult]>,
-    FL: AsRef<[fn() -> ErrorResult]>,
-    K: AsRef<[fn(&KeyEvent) -> ErrorResult]>,
-    M: AsRef<[fn(&MouseEvent) -> ErrorResult]>,
-    P: AsRef<[fn(&str) -> ErrorResult]>,
-    R: AsRef<[fn(u16, u16) -> ErrorResult]>,
-> {
+type PinedBox<'a> = Pin<Box<dyn futures::Future<Output = ErrorResult> + 'a>>;
+pub struct EventHandler<'a, FG, FL, K, M, P, R>
+where
+    FG: AsRef<[Pin<Box<dyn Fn() -> PinedBox<'a> + 'a>>]>,
+    FL: AsRef<[Pin<Box<dyn Fn() -> PinedBox<'a> + 'a>>]>,
+    K: AsRef<[Pin<Box<dyn Fn(&KeyEvent) -> PinedBox + 'a>>]>,
+    M: AsRef<[Pin<Box<dyn Fn(&MouseEvent) -> PinedBox + 'a>>]>,
+    P: AsRef<[Pin<Box<dyn Fn(&str) -> PinedBox + 'a>>]>,
+    R: AsRef<[Pin<Box<dyn Fn(u16, u16) -> PinedBox<'a> + 'a>>]>,
+{
+    phantom_data: PhantomData<&'a ()>,
     pub focus_gained: FG,
     pub focus_lost: FL,
     pub key: K,
@@ -45,15 +51,27 @@ pub struct EventHandler<
     pub resize: R,
 }
 
-impl<
-        FG: AsRef<[fn() -> ErrorResult]>,
-        FL: AsRef<[fn() -> ErrorResult]>,
-        K: AsRef<[fn(&KeyEvent) -> ErrorResult]>,
-        M: AsRef<[fn(&MouseEvent) -> ErrorResult]>,
-        P: AsRef<[fn(&str) -> ErrorResult]>,
-        R: AsRef<[fn(u16, u16) -> ErrorResult]>,
-    > EventHandler<FG, FL, K, M, P, R>
+impl<'a, FG, FL, K, M, P, R> EventHandler<'a, FG, FL, K, M, P, R>
+where
+    FG: AsRef<[Pin<Box<dyn Fn() -> PinedBox<'a> + 'a>>]>,
+    FL: AsRef<[Pin<Box<dyn Fn() -> PinedBox<'a> + 'a>>]>,
+    K: AsRef<[Pin<Box<dyn Fn(&KeyEvent) -> PinedBox + 'a>>]>,
+    M: AsRef<[Pin<Box<dyn Fn(&MouseEvent) -> PinedBox + 'a>>]>,
+    P: AsRef<[Pin<Box<dyn Fn(&str) -> PinedBox + 'a>>]>,
+    R: AsRef<[Pin<Box<dyn Fn(u16, u16) -> PinedBox<'a> + 'a>>]>,
 {
+    pub fn new(focus_gained: FG, focus_lost: FL, key: K, mouse: M, paste: P, resize: R) -> Self {
+        Self {
+            phantom_data: PhantomData::default(),
+            focus_gained,
+            focus_lost,
+            key,
+            mouse,
+            paste,
+            resize,
+        }
+    }
+
     pub async fn init(self) -> ErrorResult {
         let mut reader = EventStream::new();
         let mut interval = time::interval(time::Duration::from_millis(50));
@@ -72,37 +90,37 @@ impl<
         match event {
             Event::FocusGained => {
                 for run in self.focus_gained.as_ref() {
-                    run()?;
+                    run().await?;
                 }
             }
 
             Event::FocusLost => {
                 for run in self.focus_lost.as_ref() {
-                    run()?;
+                    run().await?;
                 }
             }
 
             Event::Key(k) => {
                 for run in self.key.as_ref() {
-                    run(&k)?;
+                    run(&k).await?;
                 }
             }
 
             Event::Mouse(m) => {
                 for run in self.mouse.as_ref() {
-                    run(&m)?;
+                    run(&m).await?;
                 }
             }
 
             Event::Paste(p) => {
                 for run in self.paste.as_ref() {
-                    run(&p)?;
+                    run(&p).await?;
                 }
             }
 
             Event::Resize(x, y) => {
                 for run in self.resize.as_ref() {
-                    run(x, y)?;
+                    run(x, y).await?;
                 }
             }
         };

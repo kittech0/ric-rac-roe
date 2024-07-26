@@ -22,10 +22,13 @@
  * SOFTWARE.
  *
  */
+
 use std::error::Error as StdError;
 use std::fmt::{Debug, Display};
+use std::future::Future;
 
 use crossterm::event::KeyEvent;
+use futures::future::BoxFuture;
 use futures::StreamExt;
 
 use crate::event::EventHandler;
@@ -37,18 +40,14 @@ type ErrorResult<T = ()> = Result<T, &'static dyn StdError>;
 #[tokio::main]
 async fn main() -> ErrorResult {
     println!("Hello, world!");
-    let ok_key: fn(&KeyEvent) -> ErrorResult = |key_code| {
-        println!("{key_code:?}");
-        Ok(())
-    };
-    let event_handler = EventHandler {
-        focus_gained: [],
-        focus_lost: [],
-        key: [ok_key],
-        mouse: [],
-        paste: [],
-        resize: [],
-    };
+    let event_handler = EventHandler::new([], [], [Box::pin(test)], [], [], []);
     event_handler.init().await?;
     Ok(())
+}
+
+fn test(key_code: &KeyEvent) -> BoxFuture<ErrorResult> {
+    Box::pin(async move {
+        println!("{key_code:?}");
+        Ok(()) // Returning Ok(()) for successful execution
+    })
 }
